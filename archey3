@@ -17,7 +17,7 @@ from subprocess import Popen, PIPE
 from optparse import OptionParser
 from getpass import getuser
 from time import ctime, sleep
-from os import getenv
+from os import getenv, getppid
 from datetime import datetime
 import re
 import os.path
@@ -123,6 +123,15 @@ WM_DICT = collections.OrderedDict([
         ('wingo', 'Wingo'),
         ('', 'None'),
         ])
+
+SHELL_DICT = collections.OrderedDict([
+    ('zsh', r'zsh ([0-9]+\.[0-9]+) \([^)]+\)'),
+    ('bash', r'^GNU bash, \w+ ([^ ]+) \([^)]+\)'),
+    ('dash', ''),
+    ('ksh', ''),
+    ('csh', ''),
+    ('tcsh', r'^tcsh ([^ ]+) \([^)]+\) '),
+    ])
 
 COLORS = {
     'black': '0',
@@ -542,6 +551,43 @@ class systemUpgrade(display):
             datestr = '{0} ({1} days ago)'.format(datestr, numdays)
 
         return "Last Upgrade", datestr
+
+
+@module_register("shell")
+class shellDisplay(display):
+    command_line = "{arg1} --version"
+
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+
+        ppid = getppid()
+        shell = ""
+        while ppid != 1 and ppid != 0 and shell == "":
+            with open("/proc/{0}/comm".format(ppid), "r") as f:
+                shell = f.read().strip().lower()
+                if shell in SHELL_DICT:
+                    break
+                shell = ""
+
+            with open("/proc/{0}/status".format(ppid), "r") as f:
+                ppid = 1
+                for line in f.readlines():
+                    if "ppid" in line.lower():
+                        ppid = line.split()[1]
+
+        self.arg1 = shell
+
+    def format_output(self, instring):
+        shell = self.arg1
+        version = ""
+        if shell in SHELL_DICT and SHELL_DICT[shell] != '':
+            m = re.match(SHELL_DICT[shell], instring)
+            if len(m.groups()):
+                version = m.group(1)
+
+        shell = shell.capitalize()
+
+        return "Shell", "{shell} {version}".format(shell=shell, version=version)
 
 #------------ Config    -----------
 
